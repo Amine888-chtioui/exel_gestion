@@ -32,6 +32,7 @@ import {
   Pie,
   Cell,
 } from 'recharts';
+import CrossColumnAnalysis from './CrossColumnAnalysis';
 import ExcelService from '../services/ExcelService';
 
 // Constantes pour les couleurs des graphiques
@@ -219,6 +220,7 @@ const FileStatistics = ({ fileId }) => {
               <Tab label="Aperçu" />
               <Tab label="Colonnes" />
               <Tab label="Graphiques" />
+              <Tab label="Analyse croisée" />
             </Tabs>
           </Box>
 
@@ -411,6 +413,13 @@ const FileStatistics = ({ fileId }) => {
                 </>
               )}
             </Box>
+          )}
+
+          {/* Onglet Analyse croisée */}
+          {activeTab === 3 && (
+            <CrossColumnAnalysis 
+              sheetData={statistics.sheets[activeSheet]} 
+            />
           )}
         </Box>
       )}
