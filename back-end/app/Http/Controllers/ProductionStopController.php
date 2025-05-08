@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Validator;
 use Maatwebsite\Excel\Facades\Excel;
+use Illuminate\Support\Facades\Log;
 
 class ProductionStopController extends Controller
 {
@@ -180,28 +181,44 @@ class ProductionStopController extends Controller
      * Import production stops from Excel file
      */
     public function importExcel(Request $request)
-    {
-        $validator = Validator::make($request->all(), [
-            'file' => 'required|file|mimes:xlsx,xls,csv',
-        ]);
+{
+    $validator = Validator::make($request->all(), [
+        'file' => 'required|file|mimes:xlsx,xls,csv',
+    ]);
 
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
-        }
+    if ($validator->fails()) {
+        return response()->json(['errors' => $validator->errors()], 422);
+    }
 
-        try {
-            Excel::import(new ProductionStopsImport, $request->file('file'));
+    try {
+        $import = new ProductionStopsImport();
+        Excel::import($import, $request->file('file'));
+        
+        // If there were failures but some rows were imported successfully
+        if (count($import->getFailures()) > 0) {
+            $failedRows = array_map(function($failure) {
+                return 'Row ' . $failure->row() . ': ' . implode(', ', $failure->errors());
+            }, $import->getFailures());
             
             return response()->json([
-                'message' => 'Data imported successfully'
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Error importing data',
-                'error' => $e->getMessage()
-            ], 500);
+                'message' => 'Data imported with some errors',
+                'warnings' => $failedRows
+            ], 200);
         }
+        
+        return response()->json([
+            'message' => 'Data imported successfully'
+        ]);
+    } catch (\Exception $e) {
+        // Log the full error for debugging
+        \Log::error('Import error: ' . $e->getMessage());
+        
+        return response()->json([
+            'message' => 'Error importing data',
+            'error' => $e->getMessage()
+        ], 500);
     }
+}
 
     /**
      * Get distinct values for filters
