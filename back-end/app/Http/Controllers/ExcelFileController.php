@@ -39,7 +39,7 @@ class ExcelFileController extends Controller
             $originalName = $file->getClientOriginalName();
             $filename = time() . '_' . $originalName;
             $path = $file->storeAs('excel_files', $filename, 'public');
-            $fullPath = storage_path('app/public/' . $path);
+            $fullPath = Storage::disk('public')->path($path);
             $size = $file->getSize();
 
             // Analyze Excel file

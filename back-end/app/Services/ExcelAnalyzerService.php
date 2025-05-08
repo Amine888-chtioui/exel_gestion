@@ -67,28 +67,42 @@ class ExcelAnalyzerService
                             continue;
                         }
                         
+                        // Ensure value is properly handled based on type
                         if (is_numeric($value)) {
                             $numericCount++;
-                            $sum += $value;
-                            $min = ($min === null) ? $value : min($min, $value);
-                            $max = ($max === null) ? $value : max($max, $value);
+                            $numericValue = floatval($value);
+                            $sum += $numericValue;
+                            $min = ($min === null) ? $numericValue : min(floatval($min), $numericValue);
+                            $max = ($max === null) ? $numericValue : max(floatval($max), $numericValue);
                         } elseif ($cell->isFormula()) {
                             // Handle formulas
                             $calculatedValue = $cell->getCalculatedValue();
                             if (is_numeric($calculatedValue)) {
                                 $numericCount++;
-                                $sum += $calculatedValue;
-                                $min = ($min === null) ? $calculatedValue : min($min, $calculatedValue);
-                                $max = ($max === null) ? $calculatedValue : max($max, $calculatedValue);
+                                $numericValue = floatval($calculatedValue);
+                                $sum += $numericValue;
+                                $min = ($min === null) ? $numericValue : min(floatval($min), $numericValue);
+                                $max = ($max === null) ? $numericValue : max(floatval($max), $numericValue);
                             } else {
                                 $textCount++;
                             }
                         } else {
                             // Check if it might be a date
-                            $dateObj = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject($value, null);
-                            if ($dateObj && $dateObj->format('Y') > 1970) {
-                                $dateCount++;
-                            } else {
+                            try {
+                                $dateValue = $value;
+                                // Make sure it's a numeric value before treating as Excel date
+                                if (is_numeric($dateValue)) {
+                                    $dateObj = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject(floatval($dateValue), null);
+                                    if ($dateObj && $dateObj->format('Y') > 1970) {
+                                        $dateCount++;
+                                    } else {
+                                        $textCount++;
+                                    }
+                                } else {
+                                    $textCount++;
+                                }
+                            } catch (\Exception $e) {
+                                // If any error occurs during date conversion, treat as text
                                 $textCount++;
                             }
                         }
