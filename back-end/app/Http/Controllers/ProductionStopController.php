@@ -3,11 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Models\ProductionStop;
+use App\Imports\ProductionStopsImport;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Validator;
 use Maatwebsite\Excel\Facades\Excel;
-use App\Imports\ProductionStopsImport;
 
 class ProductionStopController extends Controller
 {
@@ -96,12 +96,10 @@ class ProductionStopController extends Controller
     {
         $query = ProductionStop::query();
 
-        // Apply date filtering similar to index method
+        // Apply date filtering
         if ($request->has('start_date') && $request->has('end_date')) {
             $query->filterByDateRange($request->start_date, $request->end_date);
         } else if ($request->has('year')) {
-            // Similar date filtering as in index...
-            // (Simplified for brevity)
             $year = $request->year;
             $startOfYear = Carbon::createFromDate($year, 1, 1)->startOfYear();
             $endOfYear = clone $startOfYear;
@@ -137,21 +135,7 @@ class ProductionStopController extends Controller
         // Get monthly distribution for the year
         $monthlyDistribution = [];
         if ($request->has('year')) {
-            $year = $request->year;
-            for ($month = 1; $month <= 12; $month++) {
-                $startOfMonth = Carbon::createFromDate($year, $month, 1)->startOfMonth();
-                $endOfMonth = clone $startOfMonth;
-                $endOfMonth->endOfMonth();
-                
-                $totalStopTime = ProductionStop::filterByDateRange($startOfMonth, $endOfMonth)
-                    ->sum('stop_time');
-                
-                $monthlyDistribution[] = [
-                    'month' => $month,
-                    'month_name' => $startOfMonth->format('F'),
-                    'total_stop_time' => $totalStopTime,
-                ];
-            }
+            $monthlyDistribution = $this->getMonthlyDistribution($request->year);
         }
 
         return response()->json([
@@ -163,6 +147,33 @@ class ProductionStopController extends Controller
             'total_stop_time' => $query->sum('stop_time'),
             'total_stops_count' => $query->count(),
         ]);
+    }
+
+    /**
+     * Get monthly distribution for dashboard
+     * 
+     * @param int $year
+     * @return array
+     */
+    private function getMonthlyDistribution($year)
+    {
+        $monthlyDistribution = [];
+        for ($month = 1; $month <= 12; $month++) {
+            $startOfMonth = Carbon::createFromDate($year, $month, 1)->startOfMonth();
+            $endOfMonth = clone $startOfMonth;
+            $endOfMonth->endOfMonth();
+            
+            $totalStopTime = ProductionStop::query()
+                ->filterByDateRange($startOfMonth, $endOfMonth)
+                ->sum('stop_time');
+            
+            $monthlyDistribution[] = [
+                'month' => $month,
+                'month_name' => $startOfMonth->format('F'),
+                'total_stop_time' => $totalStopTime,
+            ];
+        }
+        return $monthlyDistribution;
     }
 
     /**
@@ -179,7 +190,6 @@ class ProductionStopController extends Controller
         }
 
         try {
-            // We'll need to create this import class
             Excel::import(new ProductionStopsImport, $request->file('file'));
             
             return response()->json([
