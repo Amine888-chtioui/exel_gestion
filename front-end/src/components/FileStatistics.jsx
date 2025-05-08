@@ -418,7 +418,11 @@ const FileStatistics = ({ fileId }) => {
           {/* Onglet Analyse croisée */}
           {activeTab === 3 && (
             <CrossColumnAnalysis 
-              sheetData={statistics.sheets[activeSheet]} 
+              sheetData={{
+                ...statistics.sheets[activeSheet],
+                file_id: fileId,
+                name: activeSheet
+              }} 
             />
           )}
         </Box>

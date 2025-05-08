@@ -5,70 +5,38 @@ import {
   Paper, 
   CircularProgress, 
   Alert,
-  Slider,
-  FormControlLabel,
-  Switch,
-  Card,
-  CardContent,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
   Divider,
-  FormGroup,
-  Chip,
-  Stack,
-  TextField,
-  InputAdornment,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Card,
+  CardContent
 } from '@mui/material';
-import { DataGrid } from '@mui/x-data-grid';
 import {
-  Heatmap,
-  Treemap,
-  ResponsiveContainer,
+  ScatterChart,
+  Scatter,
+  XAxis,
+  YAxis,
+  CartesianGrid,
   Tooltip,
+  ResponsiveContainer
 } from 'recharts';
-import ExcelService from '../services/ExcelService';
 import CrossAnalysisService from '../services/CrossAnalysisService';
-
-// Palette de couleurs pour la matrice de corrélation
-const CORRELATION_COLORS = {
-  'very_strong_positive': '#d32f2f', // Rouge
-  'strong_positive': '#f44336',
-  'moderate_positive': '#ff9800', // Orange
-  'weak_positive': '#ffeb3b', // Jaune
-  'negligible': '#e0e0e0', // Gris
-  'weak_negative': '#bbdefb', // Bleu clair
-  'moderate_negative': '#64b5f6',
-  'strong_negative': '#2196f3',
-  'very_strong_negative': '#0d47a1', // Bleu foncé
-};
 
 const CorrelationMatrix = ({ fileId, sheetName }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [matrix, setMatrix] = useState(null);
-  const [columns, setColumns] = useState([]);
-  const [minCorrelation, setMinCorrelation] = useState(0.3);
-  const [showHeatmap, setShowHeatmap] = useState(true);
-  const [selectedColumns, setSelectedColumns] = useState([]);
   const [availableColumns, setAvailableColumns] = useState([]);
-  const [displayMode, setDisplayMode] = useState('heatmap'); // heatmap, table, treemap
-
-  // Fonction pour obtenir la couleur en fonction de la corrélation
-  const getCorrelationColor = (correlation) => {
-    const absCorrelation = Math.abs(correlation);
-    
-    if (absCorrelation < 0.1) return CORRELATION_COLORS.negligible;
-    
-    if (correlation > 0) {
-      if (absCorrelation < 0.3) return CORRELATION_COLORS.weak_positive;
-      if (absCorrelation < 0.5) return CORRELATION_COLORS.moderate_positive;
-      if (absCorrelation < 0.7) return CORRELATION_COLORS.strong_positive;
-      return CORRELATION_COLORS.very_strong_positive;
-    } else {
-      if (absCorrelation < 0.3) return CORRELATION_COLORS.weak_negative;
-      if (absCorrelation < 0.5) return CORRELATION_COLORS.moderate_negative;
-      if (absCorrelation < 0.7) return CORRELATION_COLORS.strong_negative;
-      return CORRELATION_COLORS.very_strong_negative;
-    }
-  };
+  const [sourceColumn, setSourceColumn] = useState('');
+  const [targetColumn, setTargetColumn] = useState('');
+  const [analysisResult, setAnalysisResult] = useState(null);
 
   // Récupérer les colonnes disponibles pour l'analyse
   useEffect(() => {
@@ -77,18 +45,25 @@ const CorrelationMatrix = ({ fileId, sheetName }) => {
     const fetchColumns = async () => {
       try {
         setLoading(true);
+        console.log("Fetching columns for fileId:", fileId, "sheetName:", sheetName);
         const response = await CrossAnalysisService.getAvailableColumns(fileId, sheetName);
         
         if (response.success) {
           const numericCols = response.columns.numeric.map(col => col.name);
           setAvailableColumns(numericCols);
           
-          // Par défaut, sélectionner toutes les colonnes numériques
-          setSelectedColumns(numericCols);
+          // Par défaut, sélectionner les deux premières colonnes si disponibles
+          if (numericCols.length >= 2) {
+            setSourceColumn(numericCols[0]);
+            setTargetColumn(numericCols[1]);
+          }
+        } else {
+          console.error("API returned failure:", response);
+          setError("L'API a retourné une erreur: " + (response.message || "Erreur inconnue"));
         }
       } catch (err) {
-        setError('Erreur lors de la récupération des colonnes');
-        console.error(err);
+        console.error("Error fetching columns:", err);
+        setError('Erreur lors de la récupération des colonnes: ' + (err.message || err));
       } finally {
         setLoading(false);
       }
@@ -97,148 +72,69 @@ const CorrelationMatrix = ({ fileId, sheetName }) => {
     fetchColumns();
   }, [fileId, sheetName]);
 
-  // Récupérer la matrice de corrélation
+  // Analyser la relation entre les deux colonnes sélectionnées
   useEffect(() => {
-    if (!fileId || !sheetName || selectedColumns.length < 2) {
-      setMatrix(null);
+    if (!fileId || !sheetName || !sourceColumn || !targetColumn) {
+      setAnalysisResult(null);
       return;
     }
 
-    const fetchMatrix = async () => {
+    const analyzeColumns = async () => {
       try {
         setLoading(true);
         setError(null);
         
-        const response = await CrossAnalysisService.getCorrelationMatrix(
+        console.log("Analyzing relationship between", sourceColumn, "and", targetColumn);
+        const response = await CrossAnalysisService.analyzeColumns(
           fileId,
           sheetName,
-          selectedColumns,
-          minCorrelation
+          targetColumn, // Colonne cible (généralement numérique)
+          sourceColumn  // Colonne source
         );
         
         if (response.success) {
-          setMatrix(response.matrix);
-          
-          // Préparer les colonnes pour le tableau
-          const gridColumns = response.matrix.columns.map((col, index) => ({
-            field: col,
-            headerName: col,
-            flex: 1,
-            minWidth: 100,
-            renderCell: (params) => {
-              const value = params.value;
-              return (
-                <Box sx={{ 
-                  width: '100%', 
-                  height: '100%', 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'center',
-                  backgroundColor: getCorrelationColor(value),
-                  color: Math.abs(value) > 0.5 ? 'white' : 'black',
-                  fontWeight: Math.abs(value) > 0.7 ? 'bold' : 'normal'
-                }}>
-                  {Math.abs(value) > 0.01 ? value.toFixed(2) : '0'}
-                </Box>
-              );
-            }
-          }));
-          
-          setColumns([
-            { field: 'column', headerName: '', width: 150 },
-            ...gridColumns
-          ]);
+          console.log("Analysis result:", response.analysis);
+          setAnalysisResult(response.analysis);
+        } else {
+          setError("L'analyse n'a pas pu être effectuée: " + (response.message || "Erreur inconnue"));
         }
       } catch (err) {
-        setError('Erreur lors de la récupération de la matrice de corrélation');
-        console.error(err);
+        setError('Erreur lors de l\'analyse: ' + (err.message || err));
       } finally {
         setLoading(false);
       }
     };
 
-    fetchMatrix();
-  }, [fileId, sheetName, selectedColumns, minCorrelation]);
-
-  // Préparer les données pour le heatmap
-  const prepareHeatmapData = () => {
-    if (!matrix) return [];
-    
-    const data = [];
-    
-    for (let i = 0; i < matrix.columns.length; i++) {
-      const row = {
-        name: matrix.columns[i],
-      };
-      
-      for (let j = 0; j < matrix.columns.length; j++) {
-        row[matrix.columns[j]] = matrix.correlations[i][j];
-      }
-      
-      data.push(row);
+    if (sourceColumn !== targetColumn) {
+      analyzeColumns();
     }
-    
-    return data;
-  };
+  }, [fileId, sheetName, sourceColumn, targetColumn]);
 
-  // Préparer les données pour le tableau
-  const prepareTableRows = () => {
-    if (!matrix) return [];
+  // Gérer le changement de colonne source
+  const handleSourceChange = (event) => {
+    const value = event.target.value;
+    setSourceColumn(value);
     
-    return matrix.columns.map((col, rowIndex) => {
-      const row = { id: rowIndex, column: col };
-      
-      matrix.columns.forEach((colName, colIndex) => {
-        row[colName] = matrix.correlations[rowIndex][colIndex];
-      });
-      
-      return row;
-    });
-  };
-
-  // Préparer les données pour le treemap
-  const prepareTreemapData = () => {
-    if (!matrix) return [];
-    
-    const data = [];
-    
-    for (let i = 0; i < matrix.columns.length; i++) {
-      for (let j = i + 1; j < matrix.columns.length; j++) {
-        const correlation = matrix.correlations[i][j];
-        
-        if (Math.abs(correlation) >= minCorrelation) {
-          data.push({
-            name: `${matrix.columns[i]} - ${matrix.columns[j]}`,
-            size: Math.abs(correlation) * 100,
-            value: correlation,
-            color: getCorrelationColor(correlation)
-          });
-        }
+    // Si la même colonne est sélectionnée pour la cible, changer la cible
+    if (value === targetColumn && availableColumns.length > 1) {
+      const otherColumn = availableColumns.find(col => col !== value);
+      if (otherColumn) {
+        setTargetColumn(otherColumn);
       }
     }
+  };
+
+  // Gérer le changement de colonne cible
+  const handleTargetChange = (event) => {
+    const value = event.target.value;
+    setTargetColumn(value);
     
-    // Trier par force de corrélation (descendant)
-    data.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
-    
-    return data;
-  };
-
-  // Gérer le changement de seuil de corrélation
-  const handleMinCorrelationChange = (event, newValue) => {
-    setMinCorrelation(newValue);
-  };
-
-  // Gérer le changement du mode d'affichage
-  const handleDisplayModeChange = (mode) => {
-    setDisplayMode(mode);
-  };
-
-  // Gérer la sélection/désélection de colonnes
-  const handleColumnToggle = (column) => {
-    if (selectedColumns.includes(column)) {
-      setSelectedColumns(selectedColumns.filter(col => col !== column));
-    } else {
-      setSelectedColumns([...selectedColumns, column]);
+    // Si la même colonne est sélectionnée pour la source, changer la source
+    if (value === sourceColumn && availableColumns.length > 1) {
+      const otherColumn = availableColumns.find(col => col !== value);
+      if (otherColumn) {
+        setSourceColumn(otherColumn);
+      }
     }
   };
 
@@ -246,7 +142,7 @@ const CorrelationMatrix = ({ fileId, sheetName }) => {
     return (
       <Paper elevation={3} sx={{ p: 3, textAlign: 'center' }}>
         <Typography variant="body1" color="textSecondary">
-          Sélectionnez un fichier et une feuille pour voir la matrice de corrélation
+          Sélectionnez un fichier et une feuille pour voir l'analyse de corrélation
         </Typography>
       </Paper>
     );
@@ -271,282 +167,176 @@ const CorrelationMatrix = ({ fileId, sheetName }) => {
   return (
     <Paper elevation={3} sx={{ p: 3 }}>
       <Typography variant="h6" gutterBottom>
-        Matrice de corrélation
+        Analyse de la relation entre deux colonnes
       </Typography>
       <Divider sx={{ mb: 3 }} />
 
-      {/* Options de configuration */}
-      <Card variant="outlined" sx={{ mb: 3 }}>
-        <CardContent>
-          <Typography variant="subtitle1" gutterBottom>
-            Options d'affichage
-          </Typography>
-          
-          <Box sx={{ mb: 2 }}>
-            <Typography variant="body2" gutterBottom>
-              Seuil de corrélation minimum: {minCorrelation.toFixed(2)}
-            </Typography>
-            <Slider
-              value={minCorrelation}
-              onChange={handleMinCorrelationChange}
-              aria-labelledby="correlation-threshold-slider"
-              valueLabelDisplay="auto"
-              step={0.05}
-              marks
-              min={0}
-              max={1}
-            />
-          </Box>
-          
-          <Typography variant="body2" gutterBottom>
-            Mode d'affichage:
-          </Typography>
-          <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
-            <Chip 
-              label="Heatmap" 
-              color={displayMode === 'heatmap' ? 'primary' : 'default'} 
-              onClick={() => handleDisplayModeChange('heatmap')}
-            />
-            <Chip 
-              label="Tableau" 
-              color={displayMode === 'table' ? 'primary' : 'default'} 
-              onClick={() => handleDisplayModeChange('table')}
-            />
-            <Chip 
-              label="Treemap" 
-              color={displayMode === 'treemap' ? 'primary' : 'default'} 
-              onClick={() => handleDisplayModeChange('treemap')}
-            />
-          </Stack>
-          
-          <Typography variant="body2" gutterBottom>
-            Colonnes sélectionnées ({selectedColumns.length}/{availableColumns.length}):
-          </Typography>
-          <Box sx={{ maxHeight: '150px', overflowY: 'auto', mb: 2 }}>
-            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-              {availableColumns.map((column) => (
-                <Chip 
-                  key={column}
-                  label={column}
-                  color={selectedColumns.includes(column) ? 'primary' : 'default'}
-                  onClick={() => handleColumnToggle(column)}
-                  sx={{ mb: 1 }}
-                />
-              ))}
-            </Stack>
-          </Box>
-        </CardContent>
-      </Card>
+      {/* Sélection des colonnes */}
+      <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+        <FormControl fullWidth>
+          <InputLabel id="source-column-label">Colonne de référence</InputLabel>
+          <Select
+            labelId="source-column-label"
+            id="source-column"
+            value={sourceColumn}
+            label="Colonne de référence"
+            onChange={handleSourceChange}
+          >
+            {availableColumns.map(column => (
+              <MenuItem key={column} value={column}>{column}</MenuItem>
+            ))}
+          </Select>
+        </FormControl>
 
-      {/* Légende */}
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="subtitle2" gutterBottom>
-          Légende des corrélations
-        </Typography>
-        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-          <Chip 
-            label="Très forte +"
-            size="small"
-            sx={{ bgcolor: CORRELATION_COLORS.very_strong_positive, color: 'white' }}
-          />
-          <Chip 
-            label="Forte +"
-            size="small"
-            sx={{ bgcolor: CORRELATION_COLORS.strong_positive, color: 'white' }}
-          />
-          <Chip 
-            label="Modérée +"
-            size="small"
-            sx={{ bgcolor: CORRELATION_COLORS.moderate_positive }}
-          />
-          <Chip 
-            label="Faible +"
-            size="small"
-            sx={{ bgcolor: CORRELATION_COLORS.weak_positive }}
-          />
-          <Chip 
-            label="Négligeable"
-            size="small"
-            sx={{ bgcolor: CORRELATION_COLORS.negligible }}
-          />
-          <Chip 
-            label="Faible -"
-            size="small"
-            sx={{ bgcolor: CORRELATION_COLORS.weak_negative }}
-          />
-          <Chip 
-            label="Modérée -"
-            size="small"
-            sx={{ bgcolor: CORRELATION_COLORS.moderate_negative }}
-          />
-          <Chip 
-            label="Forte -"
-            size="small"
-            sx={{ bgcolor: CORRELATION_COLORS.strong_negative, color: 'white' }}
-          />
-          <Chip 
-            label="Très forte -"
-            size="small"
-            sx={{ bgcolor: CORRELATION_COLORS.very_strong_negative, color: 'white' }}
-          />
-        </Stack>
+        <FormControl fullWidth>
+          <InputLabel id="target-column-label">Colonne à analyser</InputLabel>
+          <Select
+            labelId="target-column-label"
+            id="target-column"
+            value={targetColumn}
+            label="Colonne à analyser"
+            onChange={handleTargetChange}
+          >
+            {availableColumns.map(column => (
+              <MenuItem key={column} value={column}>{column}</MenuItem>
+            ))}
+          </Select>
+        </FormControl>
       </Box>
 
-      {/* Affichage de la matrice */}
-      {matrix ? (
+      {/* Résultats de l'analyse */}
+      {analysisResult ? (
         <Box>
-          {/* Heatmap */}
-          {displayMode === 'heatmap' && (
-            <Box sx={{ height: 500, mb: 3 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <Heatmap
-                  data={prepareHeatmapData()}
-                  nameKey="name"
-                  dataKey={(column) => column.name}
-                  getCellColor={(value) => getCorrelationColor(value)}
-                  cellStyle={{ stroke: '#fff', strokeWidth: 1 }}
-                  renderTooltip={({ active, payload }) => {
-                    if (active && payload && payload.length > 0) {
-                      const data = payload[0];
-                      return (
-                        <Box sx={{ 
-                          bgcolor: 'background.paper', 
-                          p: 1, 
-                          border: '1px solid #ccc',
-                          boxShadow: 2
-                        }}>
-                          <Typography variant="body2">
-                            {data.column} - {data.row}
-                          </Typography>
-                          <Typography variant="body1" fontWeight="bold">
-                            {data.value && typeof data.value === 'number' 
-                              ? data.value.toFixed(4) 
-                              : 'N/A'}
-                          </Typography>
-                        </Box>
-                      );
-                    }
-                    return null;
-                  }}
-                />
+          {/* Graphique de dispersion pour visualiser la relation */}
+          {analysisResult.correlation && (
+            <Box sx={{ height: 400, mb: 3 }}>
+              <Typography variant="subtitle1" gutterBottom align="center">
+                Relation entre {sourceColumn} et {targetColumn}
+              </Typography>
+              <ResponsiveContainer width="100%" height="90%">
+                <ScatterChart
+                  margin={{ top: 20, right: 20, bottom: 20, left: 20 }}
+                >
+                  <CartesianGrid />
+                  <XAxis 
+                    type="number" 
+                    dataKey="x" 
+                    name={sourceColumn} 
+                    label={{ value: sourceColumn, position: 'insideBottomRight', offset: -5 }}
+                  />
+                  <YAxis 
+                    type="number" 
+                    dataKey="y" 
+                    name={targetColumn} 
+                    label={{ value: targetColumn, angle: -90, position: 'insideLeft' }}
+                  />
+                  <Tooltip 
+                    cursor={{ strokeDasharray: '3 3' }}
+                    formatter={(value, name) => [value.toFixed(2), name === 'x' ? sourceColumn : targetColumn]}
+                  />
+                  <Scatter 
+                    name="Valeurs" 
+                    data={analysisResult.correlation.sample_pairs} 
+                    fill="#8884d8"
+                  />
+                </ScatterChart>
               </ResponsiveContainer>
             </Box>
           )}
 
-          {/* Tableau */}
-          {displayMode === 'table' && (
-            <Box sx={{ height: 500, mb: 3 }}>
-              <DataGrid
-                rows={prepareTableRows()}
-                columns={columns}
-                pageSize={10}
-                rowsPerPageOptions={[10, 25, 50]}
-                disableSelectionOnClick
-                density="compact"
-              />
-            </Box>
-          )}
-
-          {/* Treemap */}
-          {displayMode === 'treemap' && (
-            <Box sx={{ height: 500, mb: 3 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <Treemap
-                  data={prepareTreemapData()}
-                  dataKey="size"
-                  aspectRatio={1}
-                  stroke="#fff"
-                  fill="#8884d8"
-                  content={({ root, depth, x, y, width, height, index, payload, colors, rank, name }) => {
-                    const item = root.children[index];
-                    if (!item) return null;
-                    
-                    return (
-                      <g>
-                        <rect
-                          x={x}
-                          y={y}
-                          width={width}
-                          height={height}
-                          style={{
-                            fill: item.color,
-                            stroke: '#fff',
-                            strokeWidth: 2 / (depth + 1e-10),
-                            strokeOpacity: 1 / (depth + 1e-10),
-                          }}
-                        />
-                        {width > 70 && height > 30 ? (
-                          <text
-                            x={x + width / 2}
-                            y={y + height / 2}
-                            textAnchor="middle"
-                            dominantBaseline="middle"
-                            style={{
-                              fontFamily: 'sans-serif',
-                              fontSize: 12,
-                              fill: Math.abs(item.value) > 0.5 ? '#fff' : '#000',
-                              pointerEvents: 'none',
+          {/* Tableau des statistiques */}
+          <Card sx={{ mb: 3 }}>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Statistiques de corrélation
+              </Typography>
+              
+              {analysisResult.correlation && (
+                <TableContainer component={Paper} variant="outlined">
+                  <Table>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Métrique</TableCell>
+                        <TableCell>Valeur</TableCell>
+                        <TableCell>Description</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      <TableRow>
+                        <TableCell>Coefficient de corrélation</TableCell>
+                        <TableCell>
+                          <Typography
+                            sx={{
+                              fontWeight: 'bold',
+                              color: Math.abs(analysisResult.correlation.coefficient) > 0.5 ? 
+                                analysisResult.correlation.coefficient > 0 ? 'success.main' : 'error.main' 
+                                : 'text.primary'
                             }}
                           >
-                            {item.name}
-                            <tspan x={x + width / 2} y={y + height / 2 + 15} fontSize={11} fontWeight="bold">
-                              {item.value.toFixed(2)}
-                            </tspan>
-                          </text>
-                        ) : null}
-                      </g>
-                    );
-                  }}
-                  renderTooltip={({ payload }) => {
-                    if (payload && payload.name) {
-                      return (
-                        <Box sx={{ 
-                          bgcolor: 'background.paper', 
-                          p: 1, 
-                          border: '1px solid #ccc',
-                          boxShadow: 2
-                        }}>
-                          <Typography variant="body2">
-                            {payload.name}
+                            {analysisResult.correlation.coefficient.toFixed(4)}
                           </Typography>
-                          <Typography variant="body1" fontWeight="bold">
-                            Corrélation: {payload.value.toFixed(4)}
-                          </Typography>
-                        </Box>
-                      );
-                    }
-                    return null;
-                  }}
-                />
-              </ResponsiveContainer>
-            </Box>
-          )}
+                        </TableCell>
+                        <TableCell>
+                          Le coefficient varie de -1 à 1. Une valeur proche de 1 indique une forte corrélation positive, 
+                          proche de -1 une forte corrélation négative, et proche de 0 une absence de corrélation.
+                        </TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell>Force de la relation</TableCell>
+                        <TableCell>{analysisResult.correlation.strength}</TableCell>
+                        <TableCell>
+                          Interprétation de l'intensité de la corrélation.
+                        </TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell>Nombre d'échantillons</TableCell>
+                        <TableCell>{analysisResult.correlation.sample_count}</TableCell>
+                        <TableCell>
+                          Nombre de paires de valeurs utilisées pour calculer la corrélation.
+                        </TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Interprétation */}
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Interprétation
+              </Typography>
+              
+              {analysisResult.correlation && (
+                <Typography variant="body1">
+                  {analysisResult.correlation.coefficient > 0.7 ? (
+                    `Il existe une forte corrélation positive entre ${sourceColumn} et ${targetColumn}. Quand ${sourceColumn} augmente, ${targetColumn} augmente également de manière significative.`
+                  ) : analysisResult.correlation.coefficient > 0.3 ? (
+                    `Il existe une corrélation positive modérée entre ${sourceColumn} et ${targetColumn}. Quand ${sourceColumn} augmente, ${targetColumn} tend à augmenter également.`
+                  ) : analysisResult.correlation.coefficient > 0 ? (
+                    `Il existe une faible corrélation positive entre ${sourceColumn} et ${targetColumn}. La relation entre ces deux variables est limitée.`
+                  ) : analysisResult.correlation.coefficient > -0.3 ? (
+                    `Il existe une faible corrélation négative entre ${sourceColumn} et ${targetColumn}. La relation entre ces deux variables est limitée.`
+                  ) : analysisResult.correlation.coefficient > -0.7 ? (
+                    `Il existe une corrélation négative modérée entre ${sourceColumn} et ${targetColumn}. Quand ${sourceColumn} augmente, ${targetColumn} tend à diminuer.`
+                  ) : (
+                    `Il existe une forte corrélation négative entre ${sourceColumn} et ${targetColumn}. Quand ${sourceColumn} augmente, ${targetColumn} diminue de manière significative.`
+                  )}
+                </Typography>
+              )}
+              
+              <Typography variant="body2" sx={{ mt: 2, fontStyle: 'italic' }}>
+                Remarque : Une corrélation indique une relation, mais ne prouve pas nécessairement une causalité.
+              </Typography>
+            </CardContent>
+          </Card>
         </Box>
       ) : (
-        <Alert severity="info" sx={{ mt: 2 }}>
-          {availableColumns.length < 2 
-            ? "Il faut au moins deux colonnes numériques pour générer une matrice de corrélation." 
-            : "Sélectionnez au moins deux colonnes pour générer la matrice de corrélation."}
+        <Alert severity="info">
+          Sélectionnez deux colonnes différentes pour analyser leur relation.
         </Alert>
-      )}
-
-      {/* Interprétation */}
-      {matrix && (
-        <Card variant="outlined">
-          <CardContent>
-            <Typography variant="subtitle1" gutterBottom>
-              Interprétation des résultats
-            </Typography>
-            <Typography variant="body2" paragraph>
-              Une corrélation positive forte (proche de 1) indique que lorsqu'une variable augmente, l'autre tend également à augmenter.
-              Une corrélation négative forte (proche de -1) indique que lorsqu'une variable augmente, l'autre tend à diminuer.
-              Une corrélation proche de 0 indique qu'il n'y a pas de relation linéaire entre les variables.
-            </Typography>
-            <Typography variant="body2">
-              <strong>Note:</strong> La corrélation indique une relation, mais ne prouve pas nécessairement une causalité.
-            </Typography>
-          </CardContent>
-        </Card>
       )}
     </Paper>
   );
