@@ -1,12 +1,27 @@
-// src/axios.js
+import { useEffect, useState } from 'react';
 import axios from 'axios';
 
-const instance = axios.create({
-  baseURL: 'http://127.0.0.1:8000/api', // رابط API ديال Laravel
-  headers: {
-    'Content-Type': 'application/json',
-    Accept: 'application/json',
-  },
-});
+function Users() {
+  const [users, setUsers] = useState([]);
 
-export default instance;
+  useEffect(() => {
+    axios.get('https://jsonplaceholder.typicode.com/users')
+      .then(response => {
+        setUsers(response.data);
+      })
+      .catch(error => {
+        console.error('Erreur lors de la récupération des utilisateurs:', error);
+      });
+  }, []);
+
+  return (
+    <div>
+      <h2>Liste des utilisateurs</h2>
+      <ul>
+        {users.map(user => <li key={user.id}>{user.name}</li>)}
+      </ul>
+    </div>
+  );
+}
+
+export default Users;
